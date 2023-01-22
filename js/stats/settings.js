@@ -2963,6 +2963,225 @@ const TemplateManager = new (class {
     }
 })();
 
+class MonacoEditor {
+    constructor (element) {
+        monaco.languages.register({ id: 'shroomscript' });
+
+        monaco.languages.setMonarchTokensProvider('shroomscript', {
+            includeLF: true,
+            defaultToken: 'invalid',
+
+            keywords_simple: /font|name|alias|width|background|not defined color|not defined value/,
+            keywords_assigment: /const/,
+            keywords_expression: /expr|expc|expf|order by/,
+            keywords_expression_assignment: /set/,
+            keywords_expression_function_assignment: /func/,
+            keywords_boolean: /difference/,
+
+            values_headers: Object.keys(SP_KEYWORDS),
+
+            tokenizer: {
+                root: [
+                    { include: '@comment' },
+                    [ /^\s*category:/, { token: 'keyword', next: '@value' } ],
+                    [ /^\s*header:/, { token: 'keyword', next: '@header' } ],
+                    [ /^\s*@keywords_simple:(?!\s*\n)/, { token: 'keyword', next: '@value' } ],
+                    [ /^\s*@keywords_expression:(?!\s*\n)/, { token: 'keyword', next: '@expression' } ],
+                    [
+                        /^(\s*@keywords_assigment )([\w]+)(:)(?!\s*\n)/,
+                        [
+                            { token: 'keyword' },
+                            { token: 'constant' },
+                            { token: 'keyword', next: '@value' }
+                        ]
+                    ],
+                    [
+                        /^(\s*@keywords_expression_assignment )(\${0,2})([\w]+)(:)(?!\s*\n)/,
+                        [
+                            { token: 'keyword' },
+                            { token: 'variable$2' },
+                            { token: 'variable$2' },
+                            { token: 'keyword', next: '@expression' }
+                        ]
+                    ],
+                    [
+                        /^(\s*@keywords_expression_function_assignment )([\w]+)(:)(?!\s*\n)/,
+                        [
+                            { token: 'keyword' },
+                            { token: 'function' },
+                            { token: 'keyword', next: '@expression' }
+                        ]
+                    ],
+                    [
+                        /^(\s*@keywords_boolean:)(\s*)(on|off)(\s*\n)/,
+                        [
+                            { token: 'keyword' },
+                            { token: 'white' },
+                            { token: 'boolean.$3' },
+                            { token: 'white' }
+                        ]
+                    ]
+                ],
+                comment: [
+                    {
+                        regex: /^\s*#.*\n/,
+                        action: 'comment'
+                    }
+                ],
+                value: [
+                    [ /\s*\n/, '', '@pop' ],
+                    {
+                        regex: /(\s*)(\@[a-zA-Z0-9_]+)(\s*\n)/,
+                        action: [
+                            { token: 'white' },
+                            { token: 'constant' },
+                            { token: 'white', next: '@pop' }
+                        ]
+                    },
+                    {
+                        regex: /(\s*)([^\n]*)(\s*\n)/,
+                        action: [
+                            { token: 'white' },
+                            { token: 'value' },
+                            { token: 'white', next: '@pop' }
+                        ]
+                    }
+                ],
+                header: [
+                    [ /\s*\n/, '', '@pop' ],
+                    {
+                        regex: /(\s*)(\S(?:[ \S]*\S)?)/,
+                        action: [
+                            { token: 'white' },
+                            {
+                                cases: {
+                                    '@values_headers': { token: 'header.default' },
+                                    '@default': { token: 'header.custom' }
+                                }
+                            }
+                        ]
+                    }
+                ],
+                expression: [
+                    [ /\s*\n/, '', '@popall' ],
+
+                    [ /[()\[\]]/, '@brackets' ],
+                    {
+                        regex: /@ast_symbols/,
+                        action: {
+                            cases: {
+                                '@ast_operators': 'delimiter',
+                                '@default': ''
+                            }
+                        }
+                    },
+                    [ /(@ast_digits)[eE]([\-+]?(@ast_digits))?/, 'number.float' ],
+                    [ /(@ast_digits)\.(@ast_digits)([eE][\-+]?(@ast_digits))?/, 'number.float' ],
+                    [ /0[xX](@ast_hexdigits)/, 'number.hex' ],
+                    [ /0[oO]?(@ast_octaldigits)/, 'number.octal' ],
+                    [ /0[bB](@ast_binarydigits)/, 'number.binary' ],
+                    [ /(@ast_digits)/, 'number' ],
+                    [ /[;,.]/, 'delimiter'],
+                    [ /"([^"\\]|\\.)*$/, 'string.invalid' ],
+                    [ /'([^'\\]|\\.)*$/, 'string.invalid' ],
+                    [ /"/, 'string', '@ast_string_double' ],
+                    [ /'/, 'string', '@ast_string_single' ],
+                    [ /`/, 'string', '@ast_string_backtick' ],
+                    {
+                        regex: /(\$?)(\w[ \w]*)/,
+                        action: {
+                            cases: {
+                                '$1': ['constant', 'constant'],
+                                '@default': ['identifier', 'identifier']
+                            }
+                        }
+                    },
+                    [ / /, '' ],
+                ],
+                ast_string_double: [
+                    [ /[^\\"]+/, 'string' ],
+                    [ /@ast_escapes/, 'string.escape' ],
+                    [ /\\./, 'string.escape.invalid' ],
+                    [ /"/, 'string', '@pop' ]
+                ],
+                ast_string_single: [
+                    [ /[^\\']+/, 'string' ],
+                    [ /@ast_escapes/, 'string.escape' ],
+                    [ /\\./, 'string.escape.invalid' ],
+                    [ /'/, 'string', '@pop' ]
+                ],
+                ast_string_backtick: [
+                    [ /\$\{/, { token: 'delimiter.bracket', next: '@ast_bracket_counting' } ],
+                    [ /[^\\`$]+/, 'string'],
+                    [ /@ast_escapes/, 'string.escape' ],
+                    [ /\\./, 'string.escape.invalid' ],
+                    [ /`/, 'string', '@pop' ]
+                ],
+                ast_bracket_counting: [
+                    [ /\{/, 'delimiter.bracket', '@ast_bracket_counting' ],
+                    [ /\}/, 'delimiter.bracket', '@pop' ],
+                    { include: '@expression' }
+                ],
+            },
+            ast_operators: ['*', '/', '+', '-', '>', '<', '^', '==', '===', '!=', '>=', '<=', '||', '&&', '%', '?', ':', '!'],
+            ast_symbols: /[=><!?:&|+\-*\/\^%]+/,
+            ast_escapes: /\\(?:[abfnrtv\\"']|x[0-9A-Fa-f]{1,4}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})/,
+            ast_digits: /\d+(_+\d+)*/,
+            ast_octaldigits: /[0-7]+(_+[0-7]+)*/,
+            ast_binarydigits: /[0-1]+(_+[0-1]+)*/,
+            ast_hexdigits: /[[0-9a-fA-F]+(_+[0-9a-fA-F]+)*/,
+        });
+        
+        monaco.editor.defineTheme('shroomscript', {
+            base: 'vs-dark',
+            inherit: false,
+            rules: [
+                { token: 'keyword', foreground: 'dedab4', fontStyle: 'bold' },
+                { token: 'constant', foreground: '46bbb5' },
+                { token: 'variable', foreground: '46bbb5' },
+                { token: 'function', foreground: '46bbb5' },
+                { token: 'variable$', foreground: '1f58cc' },
+                { token: 'variable$$', foreground: '6d1fcc' },
+                { token: 'string', foreground: '7a7a7a' },
+                { token: 'comment', foreground: '7a7a7a' },
+                { token: 'value', foreground: '8ba1c4' },
+                { token: 'boolean.on', foreground: '54bf76', fontStyle: 'bold' },
+                { token: 'boolean.off', foreground: 'd94827', fontStyle: 'bold' },
+                { token: 'header.default', foreground: 'f550f5', fontStyle: 'bold' },
+                { token: 'header.custom', foreground: '8ba1c4', fontStyle: 'bold' },
+                { token: 'invalid', foreground: 'b0155a', fontStyle: 'strikethrough ' },
+                { token: 'identifier', foreground: '55c030' },
+            ],
+            colors: {
+                'editor.foreground': 'ffffff'
+            }
+        });
+
+        this.editor = monaco.editor.create(
+            element,
+            {
+                value: '',
+                theme: 'shroomscript',
+                language: 'shroomscript',
+                tabSize: 2,
+                insertSpaces: true,
+                detectIndentation: false,
+                minimap: {
+                    enabled: false
+                }
+            }
+        );
+    }
+
+    get content () {
+        return this.editor.getValue();
+    }
+
+    set content (value) {
+        this.editor.setValue(value);
+    }
+}
+
 class ScriptEditor {
     constructor (parent, editorType, changeCallback) {
         this.parent = parent.get(0);

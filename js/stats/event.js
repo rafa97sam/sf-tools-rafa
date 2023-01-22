@@ -2740,11 +2740,13 @@ class SettingsView extends View {
             }
         })
 
+        /*
         this.editor = new ScriptEditor(
             this.$parent,
             EditorType.DEFAULT,
             (value) => this._contentChanged(this.script && value !== this.script.content, 'content')
         )
+        */
 
         // React to CTRL presses
         this.ctrlDown = false;
@@ -2808,6 +2810,12 @@ class SettingsView extends View {
     }
 
     show (key = 'players', returnTo = null) {
+        if (typeof this.editor === 'undefined') {
+            this.editor = new MonacoEditor(
+                this.$parent.operator('monaco').get(0)
+            )
+        }
+
         this._setScript(key);
 
         this.returnTo = returnTo;
@@ -2822,7 +2830,7 @@ class SettingsView extends View {
         }, ScriptManager.get(key, this._defaultKey(key)) || {});
 
         this.editor.content = this.script.content;
-        this.editor.scrollTop();
+        // this.editor.scrollTop();
 
         this._contentChanged(false);
     }
@@ -3012,6 +3020,8 @@ class OptionsView extends View {
             this.editor.content = Actions.getScript();
         });
 
+
+        /*
         this.editor = new ScriptEditor(this.$parent, EditorType.ACTIONS, val => {
             if (val === Actions.getScript()) {
                 this.$save.addClass('disabled');
@@ -3021,6 +3031,7 @@ class OptionsView extends View {
                 this.$reset.removeClass('disabled');
             }
         });
+        */
 
         // recovery
         this.$recoveryExport = this.$parent.find('[data-op="export"]');
@@ -3063,6 +3074,12 @@ class OptionsView extends View {
     }
 
     show () {
+        if (typeof this.editor === 'undefined') {
+            this.editor = new MonacoEditor(
+                this.$parent.operator('monaco').get(0)
+            )
+        }
+
         this.editor.content = Actions.getScript();
     }
 }
